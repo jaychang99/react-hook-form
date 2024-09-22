@@ -314,13 +314,23 @@ export function createFormControl<
       name,
     };
 
+    // if `useForm()` is globally disabled, do nothing. 
     if (!props.disabled) {
+
+      // check if this specific field is disabled 
       const disabledField = !!(
         get(_fields, name) &&
         get(_fields, name)._f &&
         get(_fields, name)._f.disabled
       );
+
+      // if this function was NOT triggered by a blur event 
+      // OR we should dirti-fy this field... 
+      // -> This block executes on `_updateDisabledField()` call. 
       if (!isBlurEvent || shouldDirty) {
+        // _proxyFormState object keeps "isDirty", "dirtyFields", "validatingFields", "touchedFields", "isValidating", "isValid", "errors".
+        // all values are initialized to `false`. 
+        // TODO: not sure what _proxyFormState is for at this time. 
         if (_proxyFormState.isDirty) {
           isPreviousDirty = _formState.isDirty;
           _formState.isDirty = output.isDirty = _getDirty();
@@ -343,6 +353,7 @@ export function createFormControl<
             isPreviousDirty !== !isCurrentFieldPristine);
       }
 
+      // if this function was triggered by a blur event on input elements... 
       if (isBlurEvent) {
         const isPreviousFieldTouched = get(_formState.touchedFields, name);
 
@@ -1014,22 +1025,50 @@ export function createFormControl<
     fields,
     value,
   }) => {
+    // _state.mount is initially set to `false` and becomes `true` on the first call to `onChange()`. See `onChange()`. 
+    // Therefore, in order for this code block to execute, at least one call to `onChange()` must have happened and `disabled` is given. 
+    // OR `disabled` is truthy value. 
+    // .. effectively making this code NOT run only when `disabled === false` AND `onChange()` were never called. 
     if ((isBoolean(disabled) && _state.mount) || !!disabled) {
       const inputValue = disabled
+        // value is considered `undefined` if field is disabled. 
         ? undefined
         : isUndefined(value)
+          // if value is NOT `undefined`, use value as is.
+          // if value is `undefined`, i.e., not provided to this function, this function will try to find a value from existing data. see `getFieldValue` for details. 
+          // ``` field ? field._f : get(fields, name)._f ``` is just to be kind...
+          // -- if field is NOT provided, this function will try to find corresponding field with `name` in `fields`. 
           ? getFieldValue(field ? field._f : get(fields, name)._f)
           : value;
+
+      // set _formValues to inputValue
+      // NOTE: (_formValues is an internal object that `useForm()` keeps. Possibly Single Source of Truth (SSOT))
       set(_formValues, name, inputValue);
+
+      // set `isBlurEvent` of this field to false (3rd arg)
+      // set `shouldDirty` of this field to false (4th arg) -> `register()` itself does not make the field dirty.
+      // set `shouldRender` of this field to true (5th arg)
       updateTouchAndDirty(name, inputValue, false, false, true);
     }
   };
 
   const register: UseFormRegister<TFieldValues> = (name, options = {}) => {
+    // `_fields` itself is not a state. 
+    // `_fields` is just a plain JS object. 
+    // `get()` gets the exact field specified by `name` parameter. 
+    // `name` parameter can be of varying format including dot property notation, square brackets notation, and some more. 
+    // see `get()` to get more info. 
     let field = get(_fields, name);
+
+    // `disable` option given to `register()` function takes precedence over global `disable` option given on `useForm()` call. 
+    // if both are not given, then final return result of `disabled` field remains undefined.  
+    // Here, we first check the existence of each `disabled` value. 
     const disabledIsDefined =
       isBoolean(options.disabled) || isBoolean(props.disabled);
 
+    // Again, `fields` itself is not a state. 
+    // `set()` sets the value of `name` of `_fields` object to be of the value passed in as the 3rd parameter. 
+    // 3rd parameter is of `unknown` type in `set()`, but here it seems to be of type `Field` - see src/types/fields.ts
     set(_fields, name, {
       ...(field || {}),
       _f: {
@@ -1039,11 +1078,15 @@ export function createFormControl<
         ...options,
       },
     });
+
+    // `_names.mount` seems to keep track of names of "mounted" fields. 
+    // Side Note: `_names` keep track of names of "mounted" / "unmounted" / "array" / "watch" fields. - each property is a JS Set(). 
     _names.mount.add(name);
 
     if (field) {
       _updateDisabledField({
         field,
+        // `disable` option given to `register()` function takes precedence over global `disable` option given on `useForm()` call. 
         disabled: isBoolean(options.disabled)
           ? options.disabled
           : props.disabled,
@@ -1051,10 +1094,15 @@ export function createFormControl<
         value: options.value,
       });
     } else {
+      // if field is not found, i.e., it is first time setting the field, set the field with `value` provided to `register()` function. 
+      // if no value was provided to `register()` function, use `defaultValues` provided to `useForm()`. (Find matching value using `name`) 
+      // see function for details. 
       updateValidAndValue(name, true, options.value);
     }
 
     return {
+      // `disable` option given to `register()` function takes precedence over global `disable` option given on `useForm()` call. 
+      // if both are not given, then final return result of `disabled` field remains undefined. 
       ...(disabledIsDefined
         ? { disabled: options.disabled || props.disabled }
         : {}),
